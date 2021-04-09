@@ -135,7 +135,7 @@ neg_op:                        ; Bitwise negation operation
     one_val_op neg_cont        ; Checks if operation can be performed
 neg_cont:                      ; If can be performed one_val_op jumps there
     mov rax, rdi               ; Move the value to the rax register
-    neg rax                    ; Perform negation
+    not rax                    ; Perform negation
     push rax                   ; Put the result to the stack
     jmp interpreted            ; Finish this character interpretation
     
