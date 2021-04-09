@@ -1,34 +1,31 @@
-;Linux kernell system calls
-SYS_WRITE equ 1
-SYS_EXIT equ 60
-SYS_READ equ 0
+; Notec - Assigment 2
+; Marcin Gadomski - mg370790
 
-STDIN equ 0                    ; Standard input file descriptior
-STDOUT equ 1                   ; Standard output file descriptior
+; Flags of the status of the current thread
+NOT_AWAITING equ 0
+AWAITS equ 1
 
-NOT_RUNNING equ 0
-WORKS equ 1
-AWAITS equ 2
+; Not hexdecimal signs interpreted by notec
+; If any of these is met, perform:
+WRITE_EXIT_SIGN equ '='        ; Turn off write mode
+ADD_SIGN equ '+'               ; Add two values from the top of the stack 
+MUL_SIGN equ '*'               ; Multiply two values from the top of the stack 
+ART_NEG_SIGN equ '-'           ; Arithmetic negation on the top value of the stack 
+AND_SIGN equ '&'               ; AND operation on the two value from the top of the stack
+OR_SIGN equ '|'                ; OR operation on the two value from the top of the stack
+XOR_SIGN equ '^'               ; XOR operation on the two value from the top of the stack
+NEG_SIGN equ '~'               ; Bitwise negation on the top value of the stack 
+REMOVE_SIGN equ 'Z'            ; Remove top value from the top of the stack
+DUP_SIGN equ 'Y'               ; Duplicate top value from the top of the stack
+SWAP_SIGN equ 'X'              ; Swap first value from the top of the stack with second one 
+NOTEC_PUSH_SIGN equ 'N'        ; Push notec number to the top of the stack
+INSTANCE_PUSH_SIGN equ 'n'     ; Wstaw na stos numer instancji tego Notecia.
+CALL_DEBUG_SIGN equ 'g'        ; Call debug function
+WAIT_SIGN equ 'W'              ; Take value from the top of the stack, wait for intance to also call W and perform stacks swap
 
-WRITE_EXIT_SIGN equ '=' ;– Wyjdź z trybu wpisywania liczby.
-ADD_SIGN equ '+' ;– Zdejmij dwie wartości ze stosu, oblicz ich sumę i wstaw wynik na stos.
-MUL_SIGN equ '*' ; Zdejmij dwie wartości ze stosu, oblicz ich iloczyn i wstaw wynik na stos.
-ART_NEG_SIGN equ '-' ; Zaneguj arytmetycznie wartość na wierzchołku stosu.
-AND_SIGN equ '&' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację AND i wstaw wynik na stos.
-OR_SIGN equ '|' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację OR i wstaw wynik na stos.
-XOR_SIGN equ '^' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację XOR i wstaw wynik na stos.
-NEG_SIGN equ '~' ; Zaneguj bitowo wartość na wierzchołku stosu.
-REMOVE_SIGN equ 'Z' ; Usuń wartość z wierzchołka stosu.
-DUP_SIGN equ 'Y' ; Wstaw na stos wartość z wierzchołka stosu, czyli zduplikuj wartość na wierzchu stosu.
-SWAP_SIGN equ 'X' ; Zamień miejscami dwie wartości na wierzchu stosu.
-NOTEC_PUSH_SIGN equ 'N' ; Wstaw na stos liczbę Noteci.
-INSTANCE_PUSH_SIGN equ 'n' ; Wstaw na stos numer instancji tego Notecia.
-CALL_DEBUG_SIGN equ 'g' ; Wywołaj funkcję debug
-WAIT_SIGN equ 'W' ; Zdejmij wartość ze stosu, potraktuj ją jako numer instancji Notecia m. Czekaj na operację W Notecia m ze zdjętym ze stosu numerem instancji Notecia n i zamień wartości na wierzchołkach stosów Noteci m i n.
-
-WRITE_MODE_OFF equ 0
-WRITE_MODE_ON equ 1
-
+; Flags to be stored in rbx to determine if write mode is on or off
+WRITE_MODE_OFF equ 0           ; Set if write mode is off
+WRITE_MODE_ON equ 1            ; Set if write mdoe is on
 
 global notec
 section .bss
@@ -38,12 +35,6 @@ section .bss
     THREAD_STACK_POINTER: resb N
     spin_lock resd 1 ; 1 raz 32 bity
 
-section .rodata
-    msg db "LET'S GO!", 0x0a
-    len equ $ - msg
-    new_line db `\n`
-
-; --------------------------------------------------------------------------------------------------
 section .text
 
 ; Jump if (value is) in interval
@@ -93,7 +84,6 @@ add_cont:                      ; If can be performed two_vals_op jumps there
     mov rax, rdi               ; Put first value to rax (To maintain consistency) 
     add rax, rsi               ; Add first and second value
     push rax                   ; Put sum to the stack
-    pop rax
     jmp interpreted            ; Finish this character interpretation
 
 mul_op:                        ; Multiply operation
@@ -128,62 +118,62 @@ or_cont:                       ; If can be performed two_vals_op jumps there
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
-write_exit_op:
-    mov rbx, WRITE_MODE_OFF
-    jmp interpreted
+write_exit_op:                 ; Turns off write mode
+    mov rbx, WRITE_MODE_OFF    ; Simply sets flag to off mode
+    jmp interpreted            ; Finish this character interpretation
 
-xor_op:
-    two_vals_op xor_cont
-xor_cont:
-    xor rax, rax
-    mov rax, rdi
-    xor rax, rsi
-    push rax
-    jmp interpreted
+xor_op:                        ; Xor operation
+    two_vals_op xor_cont       ; Checks if operation can be performed
+xor_cont:                      ; If can be performed two_vals_op jumps there
+    mov rax, rdi               ; Put first value to rax (To maintain consistency)
+    xor rax, rsi               ; Perform xor operation of two top stack values
+    push rax                   ; Put the result to the stack
+    jmp interpreted            ; Finish this character interpretation
 
-neg_op:
-    one_val_op neg_cont
-neg_cont:
-    mov rax, rdi
-    neg rax
-    push rax
-    jmp interpreted
+neg_op:                        ; Bitwise negation operation
+    one_val_op neg_cont        ; Checks if operation can be performed
+neg_cont:                      ; If can be performed one_val_op jumps there
+    mov rax, rdi               ; Move the value to the rax register
+    neg rax                    ; Perform negation
+    push rax                   ; Put the result to the stack
+    jmp interpreted            ; Finish this character interpretation
     
-remove_op:
-    one_val_op remove_cont
-remove_cont:
-    jmp interpreted
+remove_op:                     ; Remove value from the top of the stack operation
+    one_val_op remove_cont     ; Checks if operation can be performed
+remove_cont:                   ; If can be performed one_val_op jumps there
+    jmp interpreted            ; As value was already pop to the rsi we can just jump further
 
-dup_op:
-    one_val_op dup_cont
-dup_cont:
-    mov rax, rdi
-    push rax
-    push rax
+dup_op:                        ; Duplicate value from the top of the stack operation
+    one_val_op dup_cont        ; Checks if operation can be performed
+dup_cont:                      ; If can be performed one_val_op jumps there
+    mov rax, rdi               ; Move value to the rax (To maintain consistency)
+    push rax                   ; Restore value from the stack
+    push rax                   ; Put duplicated value to the stack
+    jmp interpreted            ; Finish this character interpretation
 
-swap_op:
-    two_vals_op swap_cont
-swap_cont:
-    push rdi
-    push rsi
-    jmp interpreted
+swap_op:                       ; Swap two top values from the stack
+    two_vals_op swap_cont      ; Checks if operation can be performed
+swap_cont:                     ; If can be performed two_vals_op jumps there
+    push rdi                   ; Put previously top value to the stack
+    push rsi                   ; Put previously second value as the top of the stack
+    jmp interpreted            ; Finish this character interpretation
 
-notec_push_op:
-    mov rbx, WRITE_MODE_OFF
-    push N
-    jmp interpreted
+notec_push_op:                 ; Push compilation notec N value to the top of the stack
+    mov rbx, WRITE_MODE_OFF    ; As this is not performed in other places turn off write mode
+    push N                     ; Push the N value to the stack
+    jmp interpreted            ; Finish this character interpretation
 
-instance_push_op:
-    mov rbx, WRITE_MODE_OFF
-    push r12
-    jmp interpreted
+instance_push_op:              ; Push instance value number to the top of the stack
+    mov rbx, WRITE_MODE_OFF    ; As this is not performed in other places turn off write mode
+    push r12                   ; Push instance value number to the top of the stack
+    jmp interpreted            ; Finish this character interpretation
 
 call_debug_op:
-    mov rbx, WRITE_MODE_OFF
-    mov rsi, r12
-    mov rdi, rsp
+    mov rbx, WRITE_MODE_OFF    ; 
+    mov rsi, r12               ;
+    mov rdi, rsp               ;
 ;   call debug
-    mov rax, 123
+    pop rax      ; SET DEBUG <----------------------------------------------------------------------------------
     leave
     ret
 
@@ -193,43 +183,45 @@ wait_op:
     leave
     ret
 
-strol16_num:
-    sub rdi, '0'
-    cmp rbx, WRITE_MODE_OFF
-    je push_strol
-    jmp add_to_top
+strol16_num:                   ; C like strol (to hexdecimal), but for a single numerical character
+    sub rdi, '0'               ; Subtract ASCII numerical "shift" to match hexdecimal number
+    cmp rbx, WRITE_MODE_OFF    ; Check if write mode is on
+    je push_strol              ; If is on, perform pushing value to the top of the stack
+    jmp add_to_top             ; Write mode is on, increase top value by currently recieved value
 
-strol16_small:
-    sub rdi, 'a'
-    add rdi, 10
-    cmp rbx, WRITE_MODE_OFF
-    je push_strol
-    jmp add_to_top
+strol16_small:                 ; C like strol (to hexdecimal), but for a single small hexdecimal character
+    sub rdi, 'a'               ; Subtract ASCII numerical "shift" to match hexdecimal number
+    add rdi, 10                ; Add decimal base to convert to hexdecimal value
+    cmp rbx, WRITE_MODE_OFF    ; Check if write mode is on
+    je push_strol              ; If is on, perform pushing value to the top of the stack
+    jmp add_to_top             ; Write mode is on, increase top value by currently recieved value
 
-strol16_big:
-    sub rdi, 'A'
-    add rdi, 10
-    cmp rbx, WRITE_MODE_OFF
-    je push_strol
-    jmp add_to_top
+strol16_big:                   ; C like strol (to hexdecimal), but for a single capital hexdecimal character
+    sub rdi, 'A'               ; Subtract ASCII numerical "shift" to match hexdecimal number
+    add rdi, 10                ; Add decimal base to convert to hexdecimal value
+    cmp rbx, WRITE_MODE_OFF    ; Check if write mode is on
+    je push_strol              ; If is on, perform pushing value to the top of the stack
+    jmp add_to_top             ; Write mode is on, increase top value by currently recieved value
 
-push_strol:
-    push rdi
-    mov rbx, WRITE_MODE_ON
-    jmp interpreted
+push_strol:                    ; Pushes the strol value to the stack
+    push rdi                   ; Push current value to the stack
+    mov rbx, WRITE_MODE_ON     ; Turn on write mode
+    jmp interpreted            ; Finish this character interpretation
 
-add_to_top:
-    pop rsi
-    shl rsi, 4
-    add rsi, rdi
-    push rsi
-    jmp interpreted
+add_to_top:                    ; Increase top value by the new hexdecimal number
+    pop rax                    ; Get top value from the stack
+    shl rax, 4                 ; Shift value by the base of hexdecimal numbers (16 = power(2, 4))
+    add rax, rdi               ; Add current value to shifted previously top value
+    push rax                   ; Insert the result to the top of the stack
+    jmp interpreted            ; Finish this character interpretation
 
 sign_interprete:
-    jiii rdi, '0', '9', strol16_num
-    jiii rdi, 'a', 'f', strol16_small
-    jiii rdi, 'A', 'F', strol16_big
-not_num_sign:
+    jiii rdi, '0', '9', strol16_num            ; Check if character if between '0' and '9', if so perform strol16_num
+    jiii rdi, 'a', 'f', strol16_small          ; Check if character if between 'a' and 'b', if so perform strol16_small
+    jiii rdi, 'A', 'F', strol16_big            ; Check if character if between 'A' and 'F', if so perform strol16_big
+
+; Casing through previously explained signs
+; If value from the calc equals to the sign, perform previously described operations 
     cmp rdi, WRITE_EXIT_SIGN
     je write_exit_op
     cmp rdi, ADD_SIGN
@@ -261,7 +253,7 @@ not_num_sign:
     cmp rdi, WAIT_SIGN
     je wait_op
 
-    jmp interpreted
+    jmp interpreted            ; Character was not in the list of the recogniseable values, finish character interpretation
 
 align 8
 notec:                         ; uint64_t notec(uint32_t n, char const *calc)
@@ -274,13 +266,13 @@ notec:                         ; uint64_t notec(uint32_t n, char const *calc)
 notec_loop:
     lea rdi, [r13 + r14]       ; Get 8 bytes stored in pointer *calc
     movsx rdi, byte [rdi]      ; Get first value from calc
-    cmp rdi, 0x00
-    je exit
-    inc r14
-    jmp sign_interprete
-interpreted:
-    jmp notec_loop
-exit:
-    mov rax, r14
-    leave
-    ret
+    cmp rdi, 0x00              ; Check if pointer points to end of the string
+    je exit                    ; If so, notec has finished its work
+    inc r14                    ; Increment calc counter pointing value
+    jmp sign_interprete        ; Interprete recieved character
+interpreted:                   ; Interpretation has finished
+    jmp notec_loop             ; Go to the next caracter
+exit:                          ; Epilogue, get value and finish the function call 
+    pop rax                    ; Get value from the top of the stack
+    leave                      ; Restore stack pointer
+    ret                        ; Finish the function call
