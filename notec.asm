@@ -2,6 +2,7 @@
 ; Marcin Gadomski - mg370790
 
 extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
+
 ; Flags of the status of the current thread
 NOT_AWAITING equ 0
 AWAITS equ 1
@@ -28,13 +29,14 @@ WAIT_SIGN equ 'W'              ; Take value from the top of the stack, wait for 
 WRITE_MODE_OFF equ 0           ; Set if write mode is off
 WRITE_MODE_ON equ 1            ; Set if write mdoe is on
 
+ALIGN_VALUE equ 0xFFFFFFFFFFFFFFF0             ; Value stored for stack alighemnt
+
 global notec
 section .bss
-    alignb 4
-    thread_status: resb N
-    THREAD_WAITS_FOR: resb N
-    THREAD_STACK_POINTER: resb N
-    spin_lock resd 1 ; 1 raz 32 bity
+;    thread_status: resb N
+;    THREAD_WAITS_FOR: resb N
+;    THREAD_STACK_POINTER: resb N
+;    spin_lock resd 1 ; 1 raz 32 bity
 
 section .text
 
@@ -173,7 +175,12 @@ call_debug_op:                 ; Set ups and calls provided debug functions
     mov rbx, WRITE_MODE_OFF    ; As another sign was met, turn off write mode
     mov rdi, r12               ; Move n as the first value
     mov rsi, rsp               ; Move stack pointer as the second value
+    push rbp
+    mov rbp,rsp                ; Make stack frame
+    and rsp,ALIGN_VALUE        ; Enforce stack algiment for function call
     call debug                 ; Call debug function
+    mov rsp, rbp               ; Stack frame destruction
+    pop rbp                    ; Restoring base pointer (Initial stack pointer value address)
     jmp interpreted            ; Finish this character interpretation
 
 wait_op:
@@ -214,6 +221,7 @@ add_to_top:                    ; Increase top value by the new hexdecimal number
     push rax                   ; Insert the result to the top of the stack
     jmp interpreted            ; Finish this character interpretation
 
+nop
 sign_interprete:
     jiii rdi, '0', '9', strol16_num            ; Check if character if between '0' and '9', if so perform strol16_num
     jiii rdi, 'a', 'f', strol16_small          ; Check if character if between 'a' and 'b', if so perform strol16_small
@@ -256,8 +264,14 @@ sign_interprete:
 
 align 8
 notec:                         ; uint64_t notec(uint32_t n, char const *calc)
-    push rbp
+    push rbx
+    push r11
+    push r12
+    push r13
+    push r14
+    push rbp			       ; Prologue - Store values that might be changed on debug call
     mov rbp, rsp               ; Make a stack frame
+
     mov r12, rdi               ; Save value of the n
     mov r13, rsi               ; Copy pointer to the calc
     xor r14, r14               ; Counter to the pointer 
@@ -269,9 +283,16 @@ notec_loop:
     je exit                    ; If so, notec has finished its work
     inc r14                    ; Increment calc counter pointing value
     jmp sign_interprete        ; Interprete recieved character
+    nop
 interpreted:                   ; Interpretation has finished
     jmp notec_loop             ; Go to the next caracter
 exit:                          ; Epilogue, get value and finish the function call 
     pop rax                    ; Get value from the top of the stack
-    leave                      ; Restore stack pointer
+    mov rsp, rbp               ; Stack frame destruction
+    pop rbp
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop rbx                    ; Restoring required registers
     ret                        ; Finish the function call
