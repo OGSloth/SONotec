@@ -13,7 +13,7 @@ AWAITS equ 2
 WRITE_EXIT_SIGN equ '=' ;– Wyjdź z trybu wpisywania liczby.
 ADD_SIGN equ '+' ;– Zdejmij dwie wartości ze stosu, oblicz ich sumę i wstaw wynik na stos.
 MUL_SIGN equ '*' ; Zdejmij dwie wartości ze stosu, oblicz ich iloczyn i wstaw wynik na stos.
-SUB_SIGN equ '-' ; Zaneguj arytmetycznie wartość na wierzchołku stosu.
+ART_NEG_SIGN equ '-' ; Zaneguj arytmetycznie wartość na wierzchołku stosu.
 AND_SIGN equ '&' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację AND i wstaw wynik na stos.
 OR_SIGN equ '|' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację OR i wstaw wynik na stos.
 XOR_SIGN equ '^' ; Zdejmij dwie wartości ze stosu, wykonaj na nich operację XOR i wstaw wynik na stos.
@@ -52,9 +52,9 @@ section .text
 ; %3 - higher interval value
 ; %4 - jump there if in interval value
 %macro jiii 4                  ; Jump if (value is) in interval
-    cmp %1 %2                  ; Compare with lower acceptable value
+    cmp %1, %2                 ; Compare with lower acceptable value
     jl %%not_in                ; Skip if the value is lower than the lower acceptable value
-    cmp %1 %3                  ; Compare with higher acceptable value
+    cmp %1, %3                 ; Compare with higher acceptable value
     jg %%not_in                ; Skip if the value is greater than the higher acceptable value
     jmp %4                     ; Value is in the interval, jump there
 %%not_in:                      ; Label to skip the jump if not in the interval
@@ -63,6 +63,7 @@ section .text
 ; Check if operation requiring 1 value on stack can be performed
 ; %1 - place to jump if operation can be performed
 %macro one_val_op 1            ; Check if operations can be performed
+    mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
     mov rdi, rsp               ; Get stack pointer address value
     cmp rdi, rbp               ; Compare if stack pointer is not set on initial stack address
     je interpreted             ; If equals stack is empty, operation can not be performed
@@ -73,6 +74,7 @@ section .text
 ; Check if operation requiring 2 values on stack can be performed
 ; %1 - place to jump if operation can be performed
 %macro two_vals_op 1           ; Check if operations can be performed
+    mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
     mov rdi, rsp               ; Get stack pointer address value
     cmp rdi, rsp               ; Compare if stack pointer is not set on initial stack address
     je interpreted             ; If equals stack is empty, operation can not be performed
@@ -98,16 +100,16 @@ add_cont:                      ; If can be performed two_vals_op jumps there
 mul_op:                        ; Multiply operation
     two_vals_op mul_cont       ; Checks if operation can be performed
 mul_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rsi               ; Put first value to rax
-    mul rdi                    ; Multiply first and second value
+    mov rax, rdi               ; Put first value to rax
+    mul rsi                    ; Multiply first and second value
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
-sub_op:                        ; Subtract operation
-    two_vals_op sub_cont       ; Checks if operation can be performed
-sub_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax
-    sub rax, rsi               ; Subtract first value from the second one
+art_neg_op:                    ; Artmethic negation operation
+    one_val_op art_neg_cont    ; Checks if operation can be performed
+art_neg_cont:                  ; If can be performed two_vals_op jumps there
+    xor rax, rdi               ; Put zero to the rax
+    sub rax, rdi               ; Subtract value from 0 (Artmethic negation)
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
@@ -163,55 +165,102 @@ dup_cont:
 swap_op:
     two_vals_op swap_cont
 swap_cont:
-    push rdi
     push rsi
+    push rdi
     jmp interpreted
 
 notec_push_op:
-instance_push_op:
-call_debug_op:
-    mov rsi, r12
-    mov rdi, r13
-    ;call debug
-wait_op:
+    mov rbx, WRITE_MODE_OFF
+    push N
+    jmp interpreted
 
-strol16:
+instance_push_op:
+    mov rbx, WRITE_MODE_OFF
+    push r12
+    jmp interpreted
+
+call_debug_op:
+    mov rbx, WRITE_MODE_OFF
+    mov rsi, r12
+    mov rdi, rsp
+;   call debug
+    mov rax, 123
+    leave
+    ret
+
+wait_op:
+    mov rbx, WRITE_MODE_OFF
+    mov rax, 666
+    leave
+    ret
+
+strol16_num:
+    sub rdi, '0'
     cmp rbx, WRITE_MODE_OFF
+    je push_strol
+    jmp add_to_top
+
+strol16_small:
+    sub rdi, 'a'
+    add rdi, 10
+    cmp rbx, WRITE_MODE_OFF
+    je push_strol
+    jmp add_to_top
+
+strol16_big:
+    sub rdi, 'A'
+    add rdi, 10
+    cmp rbx, WRITE_MODE_OFF
+    je push_strol
+    jmp add_to_top
+
+push_strol:
+    push rdi
+    mov rbx, WRITE_MODE_ON
+    jmp interpreted
+
+add_to_top:
+    pop rsi
+    shl rsi, 4
+    add rsi, rdi
+    push rsi
+    jmp interpreted
 
 sign_interprete:
-    jiii rdi, '0', '9', strol16
-    jiii rdi, 'a', 'f', strol16
-    jiii rdi, 'A', 'F', strol16
+    jiii rdi, '0', '9', strol16_num
+    jiii rdi, 'a', 'f', strol16_small
+    jiii rdi, 'A', 'F', strol16_big
+not_num_sign:
     cmp rdi, WRITE_EXIT_SIGN
     je write_exit_op
     cmp rdi, ADD_SIGN
     je add_op
     cmp rdi, MUL_SIGN
     je mul_op
-    cmp rdi, SUB_SIGN
-    jmp sub_op
+    cmp rdi, ART_NEG_SIGN
+    je art_neg_op
     cmp rdi, AND_SIGN
-    jmp and_op
+    je and_op
     cmp rdi, OR_SIGN
-    jmp or_op
+    je or_op
     cmp rdi, XOR_SIGN
-    jmp xor_op
+    je xor_op
     cmp rdi, NEG_SIGN
-    jmp neg_op
+    je neg_op
     cmp rdi, REMOVE_SIGN
-    jmp remove_op
+    je remove_op
     cmp rdi, DUP_SIGN
-    jmp dup_op
+    je dup_op
     cmp rdi, SWAP_SIGN
-    jmp swap_op
+    je swap_op
     cmp rdi, NOTEC_PUSH_SIGN
-    jmp notec_push_op
+    je notec_push_op
     cmp rdi, INSTANCE_PUSH_SIGN
-    jmp instance_push_op
+    je instance_push_op
     cmp rdi, CALL_DEBUG_SIGN
-    jmp call_debug_op
+    je call_debug_op
     cmp rdi, WAIT_SIGN
-    jmp wait_op
+    je wait_op
 
     jmp interpreted
 
@@ -221,16 +270,18 @@ notec:                         ; uint64_t notec(uint32_t n, char const *calc)
     mov rbp, rsp               ; Make a stack frame
     mov r12, rdi               ; Save value of the n
     mov r13, rsi               ; Copy pointer to the calc
+    xor r14, r14               ; Counter to the pointer 
+    mov rbx, WRITE_MODE_OFF    ; Set write mode to off at start
 notec_loop:
-    lea r14, [r13]             ; Get 8 bytes stored in pointer *calc
-    movsx r14, byte [r14]      ; Get first value from calc
-    cmp r14, 0x00
+    lea rdi, [r13 + r14]       ; Get 8 bytes stored in pointer *calc
+    movsx rdi, byte [rdi]      ; Get first value from calc
+    cmp rdi, 0x00
     je exit
-    inc r13
-
+    inc r14
+    jmp sign_interprete
 interpreted:
     jmp notec_loop
 exit:
-    mov rax, 123
+    mov rax, r14
     leave
     ret
