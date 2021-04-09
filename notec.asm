@@ -1,6 +1,7 @@
 ; Notec - Assigment 2
 ; Marcin Gadomski - mg370790
 
+extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
 ; Flags of the status of the current thread
 NOT_AWAITING equ 0
 AWAITS equ 1
@@ -168,14 +169,12 @@ instance_push_op:              ; Push instance value number to the top of the st
     push r12                   ; Push instance value number to the top of the stack
     jmp interpreted            ; Finish this character interpretation
 
-call_debug_op:
-    mov rbx, WRITE_MODE_OFF    ; 
-    mov rsi, r12               ;
-    mov rdi, rsp               ;
-;   call debug
-    pop rax      ; SET DEBUG <----------------------------------------------------------------------------------
-    leave
-    ret
+call_debug_op:                 ; Set ups and calls provided debug functions
+    mov rbx, WRITE_MODE_OFF    ; As another sign was met, turn off write mode
+    mov rdi, r12               ; Move n as the first value
+    mov rsi, rsp               ; Move stack pointer as the second value
+    call debug                 ; Call debug function
+    jmp interpreted            ; Finish this character interpretation
 
 wait_op:
     mov rbx, WRITE_MODE_OFF
