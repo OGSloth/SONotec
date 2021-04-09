@@ -53,19 +53,18 @@ section .text
 ; %4 - jump there if in interval value
 %macro jiii 4                  ; Jump if (value is) in interval
     cmp %1, %2                 ; Compare with lower acceptable value
-    jl %%not_in                ; Skip if the value is lower than the lower acceptable value
+    jl %%not_in_interval       ; Skip if the value is lower than the lower acceptable value
     cmp %1, %3                 ; Compare with higher acceptable value
-    jg %%not_in                ; Skip if the value is greater than the higher acceptable value
+    jg %%not_in_interval       ; Skip if the value is greater than the higher acceptable value
     jmp %4                     ; Value is in the interval, jump there
-%%not_in:                      ; Label to skip the jump if not in the interval
+%%not_in_interval:
 %endmacro
 
 ; Check if operation requiring 1 value on stack can be performed
 ; %1 - place to jump if operation can be performed
 %macro one_val_op 1            ; Check if operations can be performed
     mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
-    mov rdi, rsp               ; Get stack pointer address value
-    cmp rdi, rbp               ; Compare if stack pointer is not set on initial stack address
+    cmp rsp, rbp               ; Compare if stack pointer is not set on initial stack address
     je interpreted             ; If equals stack is empty, operation can not be performed
     pop rdi                    ; Get value from stack for further evaluation
     jmp %1                     ; Jump to operation to be performed
@@ -75,14 +74,13 @@ section .text
 ; %1 - place to jump if operation can be performed
 %macro two_vals_op 1           ; Check if operations can be performed
     mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
-    mov rdi, rsp               ; Get stack pointer address value
-    cmp rdi, rsp               ; Compare if stack pointer is not set on initial stack address
+    cmp rbp, rsp               ; Compare if stack pointer is not set on initial stack address
     je interpreted             ; If equals stack is empty, operation can not be performed
     pop rdi                    ; Get first value from stack for further evaluation
 
-    mov rsi, rsp               ; Get stack pointer address to second value
-    cmp rsi, rbp               ; Compare if stack pointer is not set on initial stack address
+    cmp rbp, rsp               ; Compare if stack pointer is not set on initial stack address
     je %%no_second_value       ; If equals stack is empty, operation can not be performed
+    pop rsi
     jmp %1                     ; Operation cna be performed, rsi and rdi stores first two values
 %%no_second_value:
     push rdi                   ; First value need to be put on the stack again
@@ -95,6 +93,7 @@ add_cont:                      ; If can be performed two_vals_op jumps there
     mov rax, rdi               ; Put first value to rax (To maintain consistency) 
     add rax, rsi               ; Add first and second value
     push rax                   ; Put sum to the stack
+    pop rax
     jmp interpreted            ; Finish this character interpretation
 
 mul_op:                        ; Multiply operation
@@ -108,7 +107,7 @@ mul_cont:                      ; If can be performed two_vals_op jumps there
 art_neg_op:                    ; Artmethic negation operation
     one_val_op art_neg_cont    ; Checks if operation can be performed
 art_neg_cont:                  ; If can be performed two_vals_op jumps there
-    xor rax, rdi               ; Put zero to the rax
+    xor rax, rax               ; Put zero to the rax
     sub rax, rdi               ; Subtract value from 0 (Artmethic negation)
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
@@ -165,8 +164,8 @@ dup_cont:
 swap_op:
     two_vals_op swap_cont
 swap_cont:
-    push rsi
     push rdi
+    push rsi
     jmp interpreted
 
 notec_push_op:
