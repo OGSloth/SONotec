@@ -1,3 +1,4 @@
+//Test przykładowy dołączony do zadania
 #include <assert.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -13,22 +14,13 @@ volatile unsigned wait = 1;
 // Startujemy co najwyżej jedno obliczenie calc_1
 // i parzystą liczbę obliczeń calc_2.
 static const char calc_1[] = "6N8ZXab=12-+3*~FFF&cDe09|g";
-// static const char calc_2[] = "nY1^W";
-// 2 -> 3
-// 3 -> 2
+static const char calc_2[] = "nY1^W";
 static const uint64_t result_1 = (~((0xab - 0x12) * 3) & 0xfff) | 0xcde09;
-static const uint64_t result_1_part1 = (~((0xab - 0x12) * 3) & 0xfff) | 0xcde09;;
-static const uint64_t result_1_part15 = 5 ^ 1;
-static const uint64_t result_1_part2 = (0xab - 0x12) * 3;
-static const uint64_t result_1_part3 = ((0xab - 0x12) * 3) & 0xfff;
-static const uint64_t result_1_part4 = ~((0xab - 0x12) * 3) & 0xfff;
 
 // Ta funkcja jest wywoływana tylko w obliczeniu calc_1
 // w celu sprawdzenia jego poprawności.
 int64_t debug(uint32_t n, uint64_t *stack_pointer) {
-  printf("n = %u\n", n);
-  printf("essa \n");
-  // assert(n == N - 1 && (n & 1) == 0);
+  assert(n == N - 1 && (n & 1) == 0);
   assert(*stack_pointer == result_1);
 
   // Usuwamy wynik ze stosu.
@@ -39,35 +31,30 @@ void* thread_routine(void *data) {
   uint32_t n = *(uint32_t*)data;
   const char *calc;
 
-/*
   if (n == N - 1 && (n & 1) == 0)
     calc = calc_1; // To obliczenie jest uruchamiane co najwyżej w jednym wątku.
   else
     calc = calc_2; // To obliczenie jest uruchamiane w parzystej liczbie wątków.
 
   while (wait);
-*/
-  calc = calc_1;
+
   uint64_t result = notec(n, calc);
-  printf("\nResult = %lu\n", result);
-/*
+
+  printf("%d %lu %s\n", n, result, calc);
+
   if (n == N - 1 && (n & 1) == 0)
     assert(result == 6);
   else
     assert(result == (n ^ 1));
-*/
+
   return NULL;
 }
 
 int main () {
+  printf("Example start\n");
   pthread_t tid[N];
   uint32_t i, n[N];
-  printf("partial = %lu\n", result_1_part1);
-  printf("partial = %lu\n", result_1_part15);
-  printf("partial = %lu\n", result_1_part2);
-  printf("partial = %lu\n", result_1_part3);
-  printf("partial = %lu\n", result_1_part4);
-  printf("res1 = %lu\n", result_1);
+
   for (i = 0; i < N; ++i) {
     n[i] = i;
     assert(0 == pthread_create(&tid[i], NULL, &thread_routine, (void*)&n[i]));
@@ -77,6 +64,6 @@ int main () {
 
   for (i = 0; i < N; ++i)
     assert(0 == pthread_join(tid[i], NULL));
-
+  printf("Example passed\n");
   return 0;
 }

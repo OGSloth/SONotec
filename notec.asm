@@ -4,7 +4,7 @@
 extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
 
 ; Flags of the status of the current thread
-NOT_AWAITING equ 0
+FINISHED equ 0
 AWAITS equ 1
 
 ; Not hexdecimal signs interpreted by notec
@@ -33,10 +33,12 @@ ALIGN_VALUE equ 0xFFFFFFFFFFFFFFF0             ; Value stored for stack alighemn
 
 global notec
 section .bss
-;    thread_status: resb N
-;    THREAD_WAITS_FOR: resb N
-;    THREAD_STACK_POINTER: resb N
-;    spin_lock resd 1 ; 1 raz 32 bity
+    THREAD_STATUS: resb N
+    WAITS_FOR: resq N
+    TOP_VAL: resq N
+
+;section .rodata
+;    buffer times 8 db 0
 
 section .text
 
@@ -177,17 +179,51 @@ call_debug_op:                 ; Set ups and calls provided debug functions
     mov rsi, rsp               ; Move stack pointer as the second value
     push rbp
     mov rbp,rsp                ; Make stack frame
-    and rsp,ALIGN_VALUE        ; Enforce stack algiment for function call
+    and rsp, ALIGN_VALUE       ; Enforce stack algiment for function call
     call debug                 ; Call debug function
     mov rsp, rbp               ; Stack frame destruction
     pop rbp                    ; Restoring base pointer (Initial stack pointer value address)
+
+    shl rax, 3                 ; Convert recieved numbers from function to number of bytes
+    add rsp, rax               ; Push stack by number of recieved bytes
     jmp interpreted            ; Finish this character interpretation
 
 wait_op:
     mov rbx, WRITE_MODE_OFF
-    mov rax, 666
-    leave
-    ret
+    pop rdi
+    mov [WAITS_FOR + r12 * 8], rdi
+    pop rsi
+    mov [TOP_VAL + r12 * 8], rsi
+    mov al, 1
+    mov [THREAD_STATUS + r12], al
+
+nop
+is_waiting:
+    mov al, [THREAD_STATUS + rdi]
+    cmp al, 0
+    jne is_waiting
+
+    nop
+busy_wait:
+    mov rsi, [WAITS_FOR + rdi * 8]
+    cmp rsi, r12
+    jne busy_wait
+
+    mov rsi, [TOP_VAL + rdi * 8]
+    mov al, 0
+    mov [THREAD_STATUS + r12], al
+    push rsi
+
+    nop
+wait_for:
+    mov al, [THREAD_STATUS + rdi]
+    cmp al, 0
+    jne wait_for
+
+    mov rax, N                 ;
+    mov [WAITS_FOR + r12 * 8], rax
+
+    jmp interpreted
 
 strol16_num:                   ; C like strol (to hexdecimal), but for a single numerical character
     sub rdi, '0'               ; Subtract ASCII numerical "shift" to match hexdecimal number
@@ -269,13 +305,14 @@ notec:                         ; uint64_t notec(uint32_t n, char const *calc)
     push r12
     push r13
     push r14
-    push rbp			       ; Prologue - Store values that might be changed on debug call
+    push rbp                   ; Prologue - Store values that might be changed on debug call
     mov rbp, rsp               ; Make a stack frame
-
     mov r12, rdi               ; Save value of the n
     mov r13, rsi               ; Copy pointer to the calc
     xor r14, r14               ; Counter to the pointer 
     mov rbx, WRITE_MODE_OFF    ; Set write mode to off at start
+    mov rax, N                 ;
+    mov [WAITS_FOR + r12 * 8], rax
 notec_loop:
     lea rdi, [r13 + r14]       ; Get 8 bytes stored in pointer *calc
     movsx rdi, byte [rdi]      ; Get first value from calc
