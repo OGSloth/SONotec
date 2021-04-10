@@ -1,11 +1,9 @@
 ; Notec - Assigment 2
 ; Marcin Gadomski - mg370790
-DEFAULT REL
-extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
+global notec
 
-; Flags of the status of the current thread
-FINISHED equ 0
-AWAITS equ 1
+DEFAULT REL                    ; Set as rel to allow use of shared memory 
+extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
 
 ; Not hexdecimal signs interpreted by notec
 ; If any of these is met, perform:
@@ -31,14 +29,19 @@ WRITE_MODE_ON equ 1            ; Set if write mdoe is on
 
 ALIGN_VALUE equ 0xFFFFFFFFFFFFFFF0             ; Value stored for stack alighemnt
 
-global notec
+
+
+
+
 section .bss
-    TOP_VAL: resq N
+    alignb 4
+    TOP_VAL: resq N            ; Stores top value for thread communication
 
 section .data
-    WAITS_FOR: times N dq N
-    SPIN_LOCKS: times N dq 1
-;    HAS_PUT: time N dq 1
+    alignb 4
+    WAITS_FOR: times N dq N    ; Stores information about for what n-th thread waits (N means that thread does not wait)
+    SPIN_LOCKS: times N dq 1   ; Spin locks for thread top values exchange
+
 
 section .text
 
@@ -56,134 +59,95 @@ section .text
 %%not_in_interval:
 %endmacro
 
-; Check if operation requiring 1 value on stack can be performed
-; %1 - place to jump if operation can be performed
-%macro one_val_op 1            ; Check if operations can be performed
-    mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
-    cmp rsp, rbp               ; Compare if stack pointer is not set on initial stack address
-    je interpreted             ; If equals stack is empty, operation can not be performed
-    pop rdi                    ; Get value from stack for further evaluation
-    jmp %1                     ; Jump to operation to be performed
-%endmacro
-
-; Check if operation requiring 2 values on stack can be performed
-; %1 - place to jump if operation can be performed
-%macro two_vals_op 1           ; Check if operations can be performed
-    mov rbx, WRITE_MODE_OFF    ; Another sign was met, write mode is off
-    cmp rbp, rsp               ; Compare if stack pointer is not set on initial stack address
-    je interpreted             ; If equals stack is empty, operation can not be performed
-    pop rdi                    ; Get first value from stack for further evaluation
-
-    cmp rbp, rsp               ; Compare if stack pointer is not set on initial stack address
-    je %%no_second_value       ; If equals stack is empty, operation can not be performed
-    pop rsi
-    jmp %1                     ; Operation cna be performed, rsi and rdi stores first two values
-%%no_second_value:
-    push rdi                   ; First value need to be put on the stack again
-    jmp interpreted            ; Jump to the end of character interpretation
-%endmacro
-
+; Get buffer macro
+; Due to problems with Position Independent Executable (Could not find better soulution)
+; Had to find way to ommit this error
+; %1 - Pointer to the buffer
+; %2 - Byte to get from the buffer
 %macro gbuff 2
-    mov rax, %1
-    mov r11, %2
-    shl r11, 3
-    add rax, r11
+    mov rax, %1                ; Get pointer to the shared memory
+    mov r11, %2                ; Get number on memory thread looks far
+    shl r11, 3                 ; Converts number of bytes to bytes
+    add rax, r11               ; Point to value looked for
 %endmacro
 
 add_op:                        ; Adding operation
-    two_vals_op add_cont       ; Checks if operation can be performed
-add_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax (To maintain consistency) 
-    add rax, rsi               ; Add first and second value
+    pop rax
+    pop rdi                    ; Geting two top stack values
+    add rax, rdi               ; Add first and second value
     push rax                   ; Put sum to the stack
     jmp interpreted            ; Finish this character interpretation
 
 mul_op:                        ; Multiply operation
-    two_vals_op mul_cont       ; Checks if operation can be performed
-mul_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax
-    mul rsi                    ; Multiply first and second value
+    pop rax
+    pop rdi                    ; Geting two top stack values
+    mul rdi                    ; Multiply first and second value
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
 art_neg_op:                    ; Artmethic negation operation
-    one_val_op art_neg_cont    ; Checks if operation can be performed
-art_neg_cont:                  ; If can be performed two_vals_op jumps there
+    pop rdi                    ; Geting value to aritmetical negation
     xor rax, rax               ; Put zero to the rax
     sub rax, rdi               ; Subtract value from 0 (Artmethic negation)
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
 and_op:                        ; And operation
-    two_vals_op and_cont       ; Checks if operation can be performed
-and_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax (To maintain consistency) 
-    and rax, rsi               ; Perform bitwise "and" operation on first and second value
+    pop rax
+    pop rdi
+    and rax, rdi               ; Perform bitwise "and" operation on first and second value
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
 or_op:                         ; Or operation
-    two_vals_op or_cont        ; Checks if operation can be performed
-or_cont:                       ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax (To maintain consistency)
-    or rax, rsi                ; Perform bitwise "or" operation on first and second value
+    pop rax
+    pop rdi                    ; Geting two top stack values
+    or rax, rdi                ; Perform bitwise "or" operation on first and second value
     push rax                   ; Put result to the stack
     jmp interpreted            ; Finish this character interpretation
 
-write_exit_op:                 ; Turns off write mode
-    mov rbx, WRITE_MODE_OFF    ; Simply sets flag to off mode
-    jmp interpreted            ; Finish this character interpretation
-
 xor_op:                        ; Xor operation
-    two_vals_op xor_cont       ; Checks if operation can be performed
-xor_cont:                      ; If can be performed two_vals_op jumps there
-    mov rax, rdi               ; Put first value to rax (To maintain consistency)
-    xor rax, rsi               ; Perform xor operation of two top stack values
+    pop rax
+    pop rdi                    ; Geting two top stack values
+    xor rax, rdi               ; Perform xor operation of two top stack values
     push rax                   ; Put the result to the stack
     jmp interpreted            ; Finish this character interpretation
 
 neg_op:                        ; Bitwise negation operation
-    one_val_op neg_cont        ; Checks if operation can be performed
-neg_cont:                      ; If can be performed one_val_op jumps there
-    mov rax, rdi               ; Move the value to the rax register
+    pop rax
     not rax                    ; Perform negation
     push rax                   ; Put the result to the stack
     jmp interpreted            ; Finish this character interpretation
     
 remove_op:                     ; Remove value from the top of the stack operation
-    one_val_op remove_cont     ; Checks if operation can be performed
-remove_cont:                   ; If can be performed one_val_op jumps there
+    pop rax                    ; If can be performed one_val_op jumps there
     jmp interpreted            ; As value was already pop to the rsi we can just jump further
 
 dup_op:                        ; Duplicate value from the top of the stack operation
-    one_val_op dup_cont        ; Checks if operation can be performed
-dup_cont:                      ; If can be performed one_val_op jumps there
-    mov rax, rdi               ; Move value to the rax (To maintain consistency)
+    pop rax
     push rax                   ; Restore value from the stack
     push rax                   ; Put duplicated value to the stack
     jmp interpreted            ; Finish this character interpretation
 
 swap_op:                       ; Swap two top values from the stack
-    two_vals_op swap_cont      ; Checks if operation can be performed
-swap_cont:                     ; If can be performed two_vals_op jumps there
+    pop rdi
+    pop rsi
     push rdi                   ; Put previously top value to the stack
     push rsi                   ; Put previously second value as the top of the stack
     jmp interpreted            ; Finish this character interpretation
 
 notec_push_op:                 ; Push compilation notec N value to the top of the stack
-    mov rbx, WRITE_MODE_OFF    ; As this is not performed in other places turn off write mode
     push N                     ; Push the N value to the stack
     jmp interpreted            ; Finish this character interpretation
 
 instance_push_op:              ; Push instance value number to the top of the stack
-    mov rbx, WRITE_MODE_OFF    ; As this is not performed in other places turn off write mode
     push r12                   ; Push instance value number to the top of the stack
     jmp interpreted            ; Finish this character interpretation
 
 call_debug_op:                 ; Set ups and calls provided debug functions
-    mov rbx, WRITE_MODE_OFF    ; As another sign was met, turn off write mode
     mov rdi, r12               ; Move n as the first value
     mov rsi, rsp               ; Move stack pointer as the second value
+
     push rbp
     mov rbp,rsp                ; Make stack frame
     and rsp, ALIGN_VALUE       ; Enforce stack algiment for function call
@@ -195,86 +159,87 @@ call_debug_op:                 ; Set ups and calls provided debug functions
     add rsp, rax               ; Push stack by number of recieved bytes
     jmp interpreted            ; Finish this character interpretation
 
-wait_op:
-    mov rbx, WRITE_MODE_OFF
+wait_op:                       ; Perform wait operation
     pop rdi
-    pop rsi
+    pop rsi                    ; Get two first values from stack
 
-    gbuff TOP_VAL, r12
-    mov [rax], rsi                        ; mov [TOP_VAL + r12 * 8], rsi
+    gbuff TOP_VAL, r12         ; Get pointer to shared memory top value buffer
+    mov [rax], rsi             ; Set my top stack value for m-thread
     
-    gbuff WAITS_FOR, r12
-    mov [rax], rdi                        ; mov [WAITS_FOR + r12 * 8], rdi
-
-; x/10 &WAITS_FOR
+    gbuff WAITS_FOR, r12       ; Get pointer to shared memory "what waits for what" buffer
+    mov [rax], rdi             ; Inform m-thread that this thread waits for it
 
     nop
-busy_wait:
-    gbuff WAITS_FOR, rdi
-    mov rsi, [rax]
+busy_wait:                     ; Waits for m-thread to wait for this thread
+    gbuff WAITS_FOR, rdi       ; Get pointer to shared memory "what waits for what" buffer
+    mov rsi, [rax]             ; Get for what m-thread waits
 
-    cmp rsi, r12
-    jne busy_wait
+    cmp rsi, r12               ; Check if m-thread waits for this thread
+    jne busy_wait              ; If not spin-lock and wait for it
 
-    cmp r12, rdi
-    jl smaller_instance
+    cmp r12, rdi               ; Check if n < m
+    jl smaller_instance        ; If so perform task for smaller number thread
     
     jmp greater_instance
 
+; Greater instance is ment to wait for smaller to get stack top value
+; After smaller instance gets value, get value, clean up buffers
+; Inform smaller instance, that stack top values exchange has finished
 greater_instance:
-spin_lock_greater:
-    gbuff SPIN_LOCKS, r12
-    mov     r9, 1          
-    xchg    r9, [rax]                                
-    test    r9, r9        
-    jnz     spin_lock_greater       
+spin_lock_greater:             ; Use spin lock waitting for smaller instance to finish work
+    gbuff SPIN_LOCKS, r12      ; Get pointer to shared memory of spinlocks buffer
+    mov     r9, 1              ; Put spinlock locking value
+    xchg    r9, [rax]          ; If lock is open, close it
+    test    r9, r9             ; Test for zero (Set zero flag)
+    jnz     spin_lock_greater  ; If flag is not zero, keep waitting in spin lock
 
-    gbuff TOP_VAL, rdi
-    mov rsi, [rax]
+    gbuff TOP_VAL, rdi         ; Get pointer to m-th thread top stack value
+    mov rsi, [rax]             ; Get value from address
 
-    push rsi
+    push rsi                   ; Put recieved value to this thread stack
 
-    gbuff WAITS_FOR, r12
-    mov r9, N
-    mov [rax], r9
+    gbuff WAITS_FOR, r12       ; Get pointer to shared memory "what waits for what" buffer
+    mov r9, N                  ; Put to register value - thread does not wait 
+    mov [rax], r9              ; Set that thread finished waitting and does not wait no more
 
-    gbuff WAITS_FOR, rdi
-    mov r9, N
-    mov [rax], r9
+    gbuff WAITS_FOR, rdi       ; Get pointer to shared memory "what waits for what" buffer
+    mov r9, N                  ; Put to register value - thread does not wait 
+    mov [rax], r9              ; Set value for smaller instance
 
-    gbuff SPIN_LOCKS, rdi
-    xor r9, r9
-    xchg r9, [rax]
+    gbuff SPIN_LOCKS, rdi      ; Get pointer to shared memory spin locks buffer
+    xor r9, r9                 ; Set register to zero (Value unlocking spinlock)
+    xchg r9, [rax]             ; Unlock smaller instance spinlock
 
-    gbuff SPIN_LOCKS, r12
-    mov r9, 1
-    mov [rax], r9
+    gbuff SPIN_LOCKS, r12      ; Get pointer to shared memory spin locks buffer
+    mov r9, 1                  ; Set register to one (Value lock spinlock for this thread)
+    mov [rax], r9              ; Lock spinlock (Cleaning up)
 
-    jmp interpreted
+    jmp interpreted            ; Recieved value, cleaned, can coninue for next character
 
-
+; Smaller instance at first get top stack value
+; And waits for m-th thread to finish it's work
 smaller_instance:
-    gbuff TOP_VAL, rdi
-    mov rsi, [rax]
+    gbuff TOP_VAL, rdi         ; Get pointer to m-th thread top stack value
+    mov rsi, [rax]             ; Get value from address
 
-    push rsi
+    push rsi                   ; Put recieved value to this thread stack
 
-    gbuff SPIN_LOCKS, rdi
-    xor r9, r9
-    xchg r9, [rax]
+    gbuff SPIN_LOCKS, rdi      ; Get pointer to shared memory spin locks buffer (For m-th value) 
+    xor r9, r9                 ; Set register to zero (Value lock spinlock for this thread) 
+    xchg r9, [rax]             ; Unlock m-th thread spinlock (Inform, that this thread recieved value)
 
 spin_lock_smaller:
-    gbuff SPIN_LOCKS, r12
-    mov     r9, 1          
-    xchg    r9, [rax]                                
-    test    r9, r9        
-    jnz     spin_lock_smaller  
+    gbuff SPIN_LOCKS, r12      ; Get pointer to shared memory of spinlocks buffer 
+    mov     r9, 1              ; Put spinlock locking value
+    xchg    r9, [rax]          ; If lock is open, close it                   
+    test    r9, r9             ; Test for zero (Set zero flag)
+    jnz     spin_lock_smaller  ; If flag is not zero, keep waitting in spin lock
 
-    gbuff SPIN_LOCKS, r12
-    mov r9, 1
-    xchg r9, [rax]
+    gbuff SPIN_LOCKS, r12      ; Get pointer to shared memory spin locks buffer
+    mov r9, 1                  ; Set register to one (Value lock spinlock for this thread)
+    xchg r9, [rax]             ; Lock spinlock (Cleaning up)
 
-    jmp interpreted
+    jmp interpreted            ; Recieved value, cleaned, can coninue for next character
     
 
 strol16_num:                   ; C like strol (to hexdecimal), but for a single numerical character
@@ -314,11 +279,12 @@ sign_interprete:
     jiii rdi, '0', '9', strol16_num            ; Check if character if between '0' and '9', if so perform strol16_num
     jiii rdi, 'a', 'f', strol16_small          ; Check if character if between 'a' and 'b', if so perform strol16_small
     jiii rdi, 'A', 'F', strol16_big            ; Check if character if between 'A' and 'F', if so perform strol16_big
-
+    mov rbx, WRITE_MODE_OFF                    ; This is not hexdecimal character, turn off write mode
+    
 ; Casing through previously explained signs
 ; If value from the calc equals to the sign, perform previously described operations 
     cmp rdi, WRITE_EXIT_SIGN
-    je write_exit_op
+    je interpreted             ; Only instruction that does not match this case, as write mode is already off
     cmp rdi, ADD_SIGN
     je add_op
     cmp rdi, MUL_SIGN
@@ -350,7 +316,7 @@ sign_interprete:
 
     jmp interpreted            ; Character was not in the list of the recogniseable values, finish character interpretation
 
-align 8
+align 8                        ; As it is not main function, requires to be aligned to 8
 notec:                         ; uint64_t notec(uint32_t n, char const *calc)
     push rbx
     push r12
