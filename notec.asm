@@ -1,6 +1,6 @@
 ; Notec - Assigment 2
 ; Marcin Gadomski - mg370790
-
+DEFAULT REL
 extern debug                   ; int64_t debug(uint32_t n, uint64_t *stack_pointer)
 
 ; Flags of the status of the current thread
@@ -33,12 +33,11 @@ ALIGN_VALUE equ 0xFFFFFFFFFFFFFFF0             ; Value stored for stack alighemn
 
 global notec
 section .bss
-    THREAD_STATUS: resb N
-    WAITS_FOR: resq N
     TOP_VAL: resq N
 
-;section .rodata
-;    buffer times 8 db 0
+section .data
+    WAITS_FOR: times N dq N
+    SPIN_LOCKS: times N dq 1
 
 section .text
 
@@ -81,6 +80,13 @@ section .text
 %%no_second_value:
     push rdi                   ; First value need to be put on the stack again
     jmp interpreted            ; Jump to the end of character interpretation
+%endmacro
+
+%macro gbuff 2
+    mov rax, %1
+    mov r11, %2
+    shl r11, 3
+    add rax, r11
 %endmacro
 
 add_op:                        ; Adding operation
@@ -191,39 +197,87 @@ call_debug_op:                 ; Set ups and calls provided debug functions
 wait_op:
     mov rbx, WRITE_MODE_OFF
     pop rdi
-    mov [WAITS_FOR + r12 * 8], rdi
     pop rsi
-    mov [TOP_VAL + r12 * 8], rsi
-    mov al, 1
-    mov [THREAD_STATUS + r12], al
+    
+    gbuff WAITS_FOR, r12
+    mov [rax], rdi                        ; mov [WAITS_FOR + r12 * 8], rdi
 
-nop
-is_waiting:
-    mov al, [THREAD_STATUS + rdi]
-    cmp al, 0
-    jne is_waiting
+   ; jmp interpreted
+    gbuff TOP_VAL, r12
+
+    mov [rax], rsi                        ; mov [TOP_VAL + r12 * 8], rsi
+; x/10 &WAITS_FOR
 
     nop
 busy_wait:
-    mov rsi, [WAITS_FOR + rdi * 8]
+    gbuff WAITS_FOR, rdi
+    mov rsi, [rax]
+
     cmp rsi, r12
     jne busy_wait
 
-    mov rsi, [TOP_VAL + rdi * 8]
-    mov al, 0
-    mov [THREAD_STATUS + r12], al
+    cmp r12, rdi
+    jl smaller_instance
+    
+    jmp greater_instance
+
+greater_instance:
+spin_lock_greater:
+    gbuff SPIN_LOCKS, r12
+    mov     r9, 1          
+    xchg    r9, [rax]                                
+    test    r9, r9        
+    jnz     spin_lock_greater       
+
+    gbuff TOP_VAL, rdi
+    mov rsi, [rax]
+
     push rsi
 
-    nop
-wait_for:
-    mov al, [THREAD_STATUS + rdi]
-    cmp al, 0
-    jne wait_for
+    gbuff WAITS_FOR, r12
 
-    mov rax, N                 ;
-    mov [WAITS_FOR + r12 * 8], rax
+    mov r9, N
+    mov [rax], r9
+
+    gbuff SPIN_LOCKS, rdi
+    xor r9, r9
+    xchg r9, [rax]
+
+    gbuff SPIN_LOCKS, r12
+    mov r9, 1
+    mov [rax], r9
 
     jmp interpreted
+
+smaller_instance:
+    gbuff TOP_VAL, rdi
+    mov rsi, [rax]
+
+    push rsi
+
+    gbuff WAITS_FOR, r12
+
+    mov r9, N
+    mov [rax], r9
+
+    gbuff SPIN_LOCKS, rdi
+    xor r9, r9
+    mov [rax], r9
+
+spin_lock_smaller:
+    gbuff SPIN_LOCKS, r12
+    mov     r9, 1          
+    xchg    r9, [rax]                                
+    test    r9, r9        
+    jnz     spin_lock_smaller  
+
+    gbuff SPIN_LOCKS, r12
+    mov r9, 1
+    mov [rax], r9
+
+    jmp interpreted
+    
+
 
 strol16_num:                   ; C like strol (to hexdecimal), but for a single numerical character
     sub rdi, '0'               ; Subtract ASCII numerical "shift" to match hexdecimal number
@@ -301,7 +355,6 @@ sign_interprete:
 align 8
 notec:                         ; uint64_t notec(uint32_t n, char const *calc)
     push rbx
-    push r11
     push r12
     push r13
     push r14
@@ -311,8 +364,6 @@ notec:                         ; uint64_t notec(uint32_t n, char const *calc)
     mov r13, rsi               ; Copy pointer to the calc
     xor r14, r14               ; Counter to the pointer 
     mov rbx, WRITE_MODE_OFF    ; Set write mode to off at start
-    mov rax, N                 ;
-    mov [WAITS_FOR + r12 * 8], rax
 notec_loop:
     lea rdi, [r13 + r14]       ; Get 8 bytes stored in pointer *calc
     movsx rdi, byte [rdi]      ; Get first value from calc
@@ -330,6 +381,5 @@ exit:                          ; Epilogue, get value and finish the function cal
     pop r14
     pop r13
     pop r12
-    pop r11
     pop rbx                    ; Restoring required registers
     ret                        ; Finish the function call
