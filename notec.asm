@@ -38,6 +38,7 @@ section .bss
 section .data
     WAITS_FOR: times N dq N
     SPIN_LOCKS: times N dq 1
+;    HAS_PUT: time N dq 1
 
 section .text
 
@@ -198,14 +199,13 @@ wait_op:
     mov rbx, WRITE_MODE_OFF
     pop rdi
     pop rsi
+
+    gbuff TOP_VAL, r12
+    mov [rax], rsi                        ; mov [TOP_VAL + r12 * 8], rsi
     
     gbuff WAITS_FOR, r12
     mov [rax], rdi                        ; mov [WAITS_FOR + r12 * 8], rdi
 
-   ; jmp interpreted
-    gbuff TOP_VAL, r12
-
-    mov [rax], rsi                        ; mov [TOP_VAL + r12 * 8], rsi
 ; x/10 &WAITS_FOR
 
     nop
@@ -235,7 +235,10 @@ spin_lock_greater:
     push rsi
 
     gbuff WAITS_FOR, r12
+    mov r9, N
+    mov [rax], r9
 
+    gbuff WAITS_FOR, rdi
     mov r9, N
     mov [rax], r9
 
@@ -249,20 +252,16 @@ spin_lock_greater:
 
     jmp interpreted
 
+
 smaller_instance:
     gbuff TOP_VAL, rdi
     mov rsi, [rax]
 
     push rsi
 
-    gbuff WAITS_FOR, r12
-
-    mov r9, N
-    mov [rax], r9
-
     gbuff SPIN_LOCKS, rdi
     xor r9, r9
-    mov [rax], r9
+    xchg r9, [rax]
 
 spin_lock_smaller:
     gbuff SPIN_LOCKS, r12
@@ -273,11 +272,10 @@ spin_lock_smaller:
 
     gbuff SPIN_LOCKS, r12
     mov r9, 1
-    mov [rax], r9
+    xchg r9, [rax]
 
     jmp interpreted
     
-
 
 strol16_num:                   ; C like strol (to hexdecimal), but for a single numerical character
     sub rdi, '0'               ; Subtract ASCII numerical "shift" to match hexdecimal number
